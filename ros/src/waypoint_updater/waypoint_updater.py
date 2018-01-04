@@ -5,6 +5,7 @@ from geometry_msgs.msg import PoseStamped
 from styx_msgs.msg import Lane, Waypoint
 
 import math
+import tf
 
 '''
 This node will publish waypoints from the car's current position to some `x` distance ahead.
@@ -38,14 +39,85 @@ class WaypointUpdater(object):
 
         # TODO: Add other member variables you need below
 
-        rospy.spin()
+        # current path
+        # NOTE: supposedly comes from top level planner (from file for simulator) at rate 40Hz
+        self.current_waypoints = None
+
+        # current pose     
+        # NOTE: supposedly comes from fusion (briged from simulator) at unknown rate   
+        self.current_pose = None
+
+        self.loop()
+
+    def loop(self):
+        rate = rospy.Rate(10) # 40 # Hz
+        while not rospy.is_shutdown():
+            if ((self.current_pose is not None) and (self.current_waypoints is not None)):
+                next_waypoint_index = self.get_next_waypoint()
+                lane = Lane()
+                lane.header.frame_id = '/world'
+                lane.header.stamp = rospy.Time(0)
+                lane.waypoints = self.current_waypoints[next_waypoint_index:next_waypoint_index+LOOKAHEAD_WPS]
+                self.final_waypoints_pub.publish(lane)
+
+            rate.sleep()
+
+    def euclidean_distance(self, position1, position2):
+        a = position1
+        b = position2
+        return math.sqrt((a.x-b.x)**2 + (a.y-b.y)**2  + (a.z-b.z)**2)
+
+    def get_closest_waypoint(self):
+        min_dist = 100000
+        min_ind = 0
+        ind = 0
+        position1 = self.current_pose.pose.position
+        for wp in self.current_waypoints:
+            position2 = wp.pose.pose.position 
+            dist = self.euclidean_distance(position1, position2)
+            if dist < min_dist:
+                min_dist = dist
+                min_ind = ind
+            ind += 1
+        return min_ind
+
+    def current_yaw(self):
+        quaternion = (self.current_pose.pose.orientation.x)
+        quaternion = (
+            self.current_pose.pose.orientation.x,
+            self.current_pose.pose.orientation.y,
+            self.current_pose.pose.orientation.z,
+            self.current_pose.pose.orientation.w)
+        euler = tf.transformations.euler_from_quaternion(quaternion)
+        return euler[2]
+
+    def get_next_waypoint(self):
+        ind = self.get_closest_waypoint()
+        
+        map_x = self.current_waypoints[ind].pose.pose.position.x
+        map_y = self.current_waypoints[ind].pose.pose.position.y
+
+        x = self.current_pose.pose.position.x
+        y = self.current_pose.pose.position.y
+
+        heading = math.atan2((map_y-y), (map_x-x))
+        yaw = self.current_yaw()
+        angle = abs(yaw - heading);
+
+        #print ('yaw:', yaw, 'heading:', heading, 'angle:', angle, map_x, map_y, x, y)
+
+        if (angle > math.pi/4):
+            ind += 1
+
+        #print ('finx:', self.current_waypoints[ind].pose.pose.position.x, 'finy:', self.current_waypoints[ind].pose.pose.position.y)
+        return ind
 
     def pose_cb(self, msg):
-        # TODO: Implement
+        self.current_pose = msg
         pass
 
-    def waypoints_cb(self, waypoints):
-        # TODO: Implement
+    def waypoints_cb(self, lane):
+        self.current_waypoints = lane.waypoints;
         pass
 
     def traffic_cb(self, msg):
