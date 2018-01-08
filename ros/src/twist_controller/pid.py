@@ -21,7 +21,7 @@ class PID(object):
         self.last_int_val = self.int_val
 
         integral = self.int_val + error * sample_time;
-        derivative = (error - self.last_error) / sample_time;
+        derivative = (error - self.last_error) / sample_time if sample_time > 0  else 0;
 
         y = self.kp * error + self.ki * self.int_val + self.kd * derivative;
         val = max(self.min, min(y, self.max))
