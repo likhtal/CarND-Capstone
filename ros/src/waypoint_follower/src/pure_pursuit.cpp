@@ -45,15 +45,15 @@ int main(int argc, char **argv)
 
   bool linear_interpolate_mode;
   private_nh.param("linear_interpolate_mode", linear_interpolate_mode, bool(true));
-  ROS_INFO_STREAM("linear_interpolate_mode : " << linear_interpolate_mode);
+  //ROS_INFO_STREAM("linear_interpolate_mode : " << linear_interpolate_mode);
 
   waypoint_follower::PurePursuit pp(linear_interpolate_mode);
 
-  ROS_INFO("set publisher...");
+  //ROS_INFO("set publisher...");
   // publish topic
   ros::Publisher cmd_velocity_publisher = nh.advertise<geometry_msgs::TwistStamped>("twist_cmd", PUB_SUB_QUEUE_SIZE);
 
-  ROS_INFO("set subscriber...");
+  //ROS_INFO("set subscriber...");
   // subscribe topic
   ros::Subscriber waypoint_subscriber =
       nh.subscribe("final_waypoints", PUB_SUB_QUEUE_SIZE, &waypoint_follower::PurePursuit::callbackFromWayPoints, &pp);
@@ -62,7 +62,7 @@ int main(int argc, char **argv)
   ros::Subscriber est_twist_subscriber =
       nh.subscribe("current_velocity", PUB_SUB_QUEUE_SIZE, &waypoint_follower::PurePursuit::callbackFromCurrentVelocity, &pp);
 
-  ROS_INFO("pure pursuit start");
+  //ROS_INFO("pure pursuit start");
   ros::Rate loop_rate(LOOP_RATE);
   while (ros::ok())
   {
