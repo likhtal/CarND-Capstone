@@ -37,7 +37,7 @@ class TLDetector(object):
         '''
         rospy.Subscriber('/vehicle/traffic_lights', TrafficLightArray, self.traffic_cb)
         #sub6 = rospy.Subscriber('/image_color', Image, self.image_cb)
-        self.sub_image = rospy.Subscriber('/image_color', Image, self.image_cb, queue_size=1, buff_size=4*52428800) 
+        self.sub_image = rospy.Subscriber('/image_color', Image, self.image_cb, queue_size=1) #, buff_size=4*52428800) 
         print("subscribed")
 
         config_string = rospy.get_param("/traffic_light_config")
@@ -54,49 +54,53 @@ class TLDetector(object):
         self.last_wp = -1
         self.state_count = 0
 
-        self.initializing = True
-        self.car_wp = None
+        self.stop_waypoints = []
 
-        self.nlight_i = None
-        self.nlight_wp = None
+        self.car_wp = -1
+        self.nlight_i = -1
+        self.nlight_wp = -1
         self.nlight = None
 
+        self.initializing = True
         self.loop()
 
     def loop(self):
         rate = rospy.Rate(1)
         while not rospy.is_shutdown():
-            if self.initializing:
-                pass # self.upcoming_red_light_pub.publish(Int32(-1))
-            else:
-                if self.current_pose and self.base_waypoints and self.lights:
+            if not self.initializing:
+                if self.current_pose and self.base_waypoints and len(self.lights) > 0 and len(self.stop_waypoints) > 0:
+                    if len(self.lights) != len(self.stop_waypoints):
+                      print("We have different number of stops and lights!!!")
+                      break
+
                     # we are near this point
                     self.car_wp = self.get_closest_waypoint(self.current_pose.pose)
+                    self.nlight_i = self.find_next_stop(self.car_wp)
 
-                    self.nlight_wp = None
+                    self.nlight_wp = -1
                     self.nlight = None
 
-                    for i in range(len(self.lights)):
-                        light_wp = self.get_closest_waypoint(self.lights[i].pose.pose)  # TODO: faster
-                  
-                        if (self.car_wp < light_wp) and self.distance_sq(self.current_pose.pose.position, self.lights[i].pose.pose.position) < MAX_D_SQ:
-                            self.nlight_i = i
-                            self.nlight_wp = light_wp
-                            self.nlight = self.lights[i]
-                            break
+                    if self.nlight_i >= 0 and (self.car_wp < self.stop_waypoints[self.nlight_i] + 10) and (self.car_wp > self.stop_waypoints[self.nlight_i] - 100):
 
-                    if self.nlight_wp is not None and self.sub_image is None:
-                        self.sub_image = rospy.Subscriber('/image_color', Image, self.image_cb, queue_size=1, buff_size=4*52428800) 
+                        self.nlight_wp = self.stop_waypoints[self.nlight_i]
+                        self.nlight = self.lights[self.nlight_i]
+
+                    if self.nlight_wp >= 0 and self.sub_image is None:
+
+                        self.sub_image = rospy.Subscriber('/image_color', Image, self.image_cb, queue_size=1) #, buff_size=4*52428800) 
                         print("subscribed")
-                    elif self.nlight_wp is None and self.sub_image is not None:
+
+                    elif self.nlight_wp < 0 and self.sub_image is not None:
+
                         self.sub_image.unregister()
                         self.sub_image = None
                         print("unsubscribed")
                         self.last_wp = -1
                         self.upcoming_red_light_pub.publish(Int32(-1))
+
                 else:
-                    pass
-                    #self.upcoming_red_light_pub.publish(Int32(-1)) 
+                    print("No pose, or no waypoints, or # of lights or stops is zero!!!")
+                    break
 
             rate.sleep()
 
@@ -105,6 +109,14 @@ class TLDetector(object):
 
     def waypoints_cb(self, msg):
         self.base_waypoints = msg.waypoints;
+
+        # List of positions that correspond to the line to stop in front of for a given intersection
+        self.stop_positions = self.config['stop_line_positions']
+
+        for stop_pos in self.stop_positions:
+           stop_pose_stamped = self.create_dummy_pose(stop_pos[0], stop_pos[1], 0)
+           stop_wp = self.get_closest_waypoint(stop_pose_stamped.pose)
+           self.stop_waypoints.append(stop_wp)
 
     def traffic_cb(self, msg):
         self.lights = msg.lights
@@ -117,8 +129,6 @@ class TLDetector(object):
             msg (Image): image from car-mounted camera
 
         """
-        #print((rospy.get_time(), msg.height, msg.width))
-
         self.has_image = True
         self.camera_image = msg
         light_wp, state = self.process_traffic_lights()
@@ -134,10 +144,12 @@ class TLDetector(object):
             self.state = state
         elif self.state_count >= STATE_COUNT_THRESHOLD:
             self.last_state = self.state
-            light_wp = light_wp if state == TrafficLight.RED else -1
+            light_wp = light_wp if state == TrafficLight.RED or state == TrafficLight.YELLOW else -1
 
             if state == TrafficLight.RED:
-              print(("nlight_i:", self.nlight_i, self.nlight.state, self.state_count, "car_wp:", self.car_wp, "nlight_wp:", self.nlight_wp))
+              print(("nlight_i:", self.nlight_i, "RED", self.state_count, "car_wp:", self.car_wp, "nlight_wp:", self.nlight_wp))
+            if state == TrafficLight.YELLOW:
+              print(("nlight_i:", self.nlight_i, "YELLOW", self.state_count, "car_wp:", self.car_wp, "nlight_wp:", self.nlight_wp))
 
             self.last_wp = light_wp
             self.upcoming_red_light_pub.publish(Int32(light_wp))
@@ -148,12 +160,23 @@ class TLDetector(object):
         if self.initializing:
             self.initializing = False
 
+    def create_dummy_pose(self, x, y, z):
+        pose = PoseStamped()
+
+        pose.pose.position.x = x
+        pose.pose.position.y = y
+        pose.pose.position.z = z
+
+        return pose
+
+    def find_next_stop(self, wp):
+        for i in range(len(self.stop_waypoints)):
+           if wp < self.stop_waypoints[i] + 10:
+              return i
+        return -1
+
     def distance_sq(self, p1, p2):
         x, y, z = p1.x - p2.x, p1.y - p2.y, p1.z - p2.z
-        return x*x + y*y + z*z
-
-    def distancexyz_sq(self, x1, y1, x2, y2, z1, z2):
-        x, y, z = x1 - x2, y1 - y2, z1 - z2
         return x*x + y*y + z*z
 
     def get_closest_waypoint(self, pose):
@@ -204,11 +227,6 @@ class TLDetector(object):
 
         if self.nlight_wp and self.nlight:
             return self.nlight_wp, self.nlight.state
-
-        #light = None
-
-        # List of positions that correspond to the line to stop in front of for a given intersection
-        #self.stop_line_positions = self.config['stop_line_positions']
 
         return -1, TrafficLight.UNKNOWN
 

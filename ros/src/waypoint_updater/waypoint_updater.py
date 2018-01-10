@@ -1,6 +1,7 @@
 #!/usr/bin/env python
 
 import rospy
+from std_msgs.msg import Int32
 from geometry_msgs.msg import PoseStamped
 from styx_msgs.msg import Lane, Waypoint
 
@@ -23,6 +24,7 @@ as well as to verify your TL classifier.
 TODO (for Yousuf and Aaron): Stopline location for each traffic light.
 '''
 
+MAX_DECEL = 1.0
 LOOKAHEAD_WPS = 80 # Number of waypoints we will publish. You can change this number
 
 class WaypointUpdater(object):
@@ -32,7 +34,8 @@ class WaypointUpdater(object):
         rospy.Subscriber('/current_pose', PoseStamped, self.pose_cb)
         rospy.Subscriber('/base_waypoints', Lane, self.waypoints_cb)
 
-        # TODO: Add a subscriber for /traffic_waypoint and /obstacle_waypoint below
+        # Add a subscriber for /traffic_waypoint and /obstacle_waypoint below
+        rospy.Subscriber('/traffic_waypoint', Int32, self.traffic_cb)
 
         self.final_waypoints_pub = rospy.Publisher('final_waypoints', Lane, queue_size=1)
 
@@ -41,6 +44,9 @@ class WaypointUpdater(object):
         self.base_waypoints = None
 
         self.current_pose = None
+ 
+        self.light_wp = -1
+        self.stopping_waypoints = None
 
         self.loop()
 
@@ -52,10 +58,40 @@ class WaypointUpdater(object):
                 lane = Lane()
                 lane.header.frame_id = '/world'
                 lane.header.stamp = rospy.Time(0)
-                lane.waypoints = self.base_waypoints[next : next + LOOKAHEAD_WPS]
-                self.final_waypoints_pub.publish(lane)
+
+                if self.light_wp < 0:
+                    lane.waypoints = self.base_waypoints[next : next + LOOKAHEAD_WPS]
+                    self.stopping_waypoints = None
+                    self.final_waypoints_pub.publish(lane)
+
+                else:
+                    self.stopping_waypoints = []
+                    if next < self.light_wp:
+                        for wp in self.base_waypoints[next : self.light_wp + 1]:
+                            p = Waypoint()
+                            wp_pose = wp.pose.pose
+                            p.pose.pose.position.x = wp_pose.position.x
+                            p.pose.pose.position.y = wp_pose.position.y
+                            p.pose.pose.position.z = wp_pose.position.z
+                            p.pose.pose.orientation = wp_pose.orientation
+                            p.twist.twist.linear.x = wp.twist.twist.linear.x
+                            self.stopping_waypoints.append(p)
+
+                    lane.waypoints = self.decelerate(self.stopping_waypoints) if len(self.stopping_waypoints) > 0 else []
+                    self.final_waypoints_pub.publish(lane)
 
             rate.sleep()
+
+    def decelerate(self, waypoints):
+        last = waypoints[-1]
+        last.twist.twist.linear.x = 0.
+        for wp in waypoints[:-1][::-1]:
+            dist = self.distance2(wp.pose.pose.position, last.pose.pose.position)
+            vel = math.sqrt(2 * MAX_DECEL * dist) * 3.6
+            if vel < 1.:
+                vel = 0.
+            wp.twist.twist.linear.x = min(vel, wp.twist.twist.linear.x)
+        return waypoints
 
     def distance_sq(self, p1, p2):
         x, y, z = p1.x - p2.x, p1.y - p2.y, p1.z - p2.z
@@ -63,10 +99,13 @@ class WaypointUpdater(object):
 
     def get_closest_waypoint(self):
         self_pos = self.current_pose.pose.position
-        distances = [self.distance_sq(self_pos, way_pos.pose.pose.position) for way_pos in self.base_waypoints]
+        distances = np.array([self.distance_sq(self_pos, way_pos.pose.pose.position) for way_pos in self.base_waypoints])
         return np.argmin(distances)
 
     # https://answers.ros.org/question/69754/quaternion-transformations-in-python/
+    def quaternion_from_yaw(self, yaw):
+        return tf.transformations.quaternion_from_euler(0., 0., yaw)
+
     def yaw_from_quaternion(self, quaternion):
         euler = tf.transformations.euler_from_quaternion(quaternion)
         return euler[2]
@@ -79,12 +118,8 @@ class WaypointUpdater(object):
         way_pos = self.base_waypoints[closest].pose.pose.position
         
         heading = math.atan2((way_pos.y-self_pos.y), (way_pos.x-self_pos.x))
-
         yaw = self.yaw_from_quaternion((orientation.x, orientation.y, orientation.z, orientation.w))
-
         angle = abs(yaw - heading);
-
-        print ('yaw:', yaw, 'heading:', heading, 'angle:', angle, way_pos.x, self_pos.x, way_pos.y-self_pos.y)
 
         if (angle > math.pi/4):
             return closest + 1
@@ -100,8 +135,7 @@ class WaypointUpdater(object):
         pass
 
     def traffic_cb(self, msg):
-        # TODO: Callback for /traffic_waypoint message. Implement
-        pass
+        self.light_wp = msg.data
 
     def obstacle_cb(self, msg):
         # TODO: Callback for /obstacle_waypoint message. We will implement it later
@@ -120,6 +154,10 @@ class WaypointUpdater(object):
             dist += dl(waypoints[wp1].pose.pose.position, waypoints[i].pose.pose.position)
             wp1 = i
         return dist
+
+    def distance2(self, p1, p2):
+        x, y, z = p1.x - p2.x, p1.y - p2.y, p1.z - p2.z
+        return math.sqrt(x*x + y*y + z*z)
 
 
 if __name__ == '__main__':

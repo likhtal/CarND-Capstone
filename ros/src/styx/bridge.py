@@ -35,7 +35,7 @@ TYPE = {
     'image':Image
 }
 
-EVERY_NTH_IMAGE = 5
+EVERY_NTH_IMAGE = 6
 
 class Bridge(object):
     def __init__(self, conf, server):
