@@ -51,7 +51,7 @@ class TLDetector(object):
 
         self.state = TrafficLight.UNKNOWN
         self.last_state = TrafficLight.UNKNOWN
-        self.last_wp = -1
+        self.last_wp = -2
         self.state_count = 0
 
         self.stop_waypoints = []
@@ -67,7 +67,11 @@ class TLDetector(object):
     def loop(self):
         rate = rospy.Rate(1)
         while not rospy.is_shutdown():
-            if not self.initializing:
+
+            if self.initializing:
+                self.upcoming_red_light_pub.publish(Int32(-2))
+
+            else:
                 if self.current_pose and self.base_waypoints and len(self.lights) > 0 and len(self.stop_waypoints) > 0:
                     if len(self.lights) != len(self.stop_waypoints):
                       print("We have different number of stops and lights!!!")
@@ -116,7 +120,7 @@ class TLDetector(object):
         for stop_pos in self.stop_positions:
            stop_pose_stamped = self.create_dummy_pose(stop_pos[0], stop_pos[1], 0)
            stop_wp = self.get_closest_waypoint(stop_pose_stamped.pose)
-           self.stop_waypoints.append(stop_wp)
+           self.stop_waypoints.append(stop_wp - 8)
 
     def traffic_cb(self, msg):
         self.lights = msg.lights
@@ -152,8 +156,10 @@ class TLDetector(object):
               print(("nlight_i:", self.nlight_i, "YELLOW", self.state_count, "car_wp:", self.car_wp, "nlight_wp:", self.nlight_wp))
 
             self.last_wp = light_wp
+            print(("light_wp", light_wp))
             self.upcoming_red_light_pub.publish(Int32(light_wp))
         else:
+            print(("last_wp", self.last_wp))
             self.upcoming_red_light_pub.publish(Int32(self.last_wp))
         self.state_count += 1
 
@@ -190,7 +196,7 @@ class TLDetector(object):
 
         """
         self_pos = pose.position
-        distances = [self.distance_sq(self_pos, way_pos.pose.pose.position) for way_pos in self.base_waypoints]
+        distances = np.array([self.distance_sq(self_pos, way_pos.pose.pose.position) for way_pos in self.base_waypoints])
         return np.argmin(distances)
 
     def get_light_state(self, light):
@@ -225,7 +231,7 @@ class TLDetector(object):
             state = self.get_light_state(0)
             return -1, TrafficLight.UNKNOWN
 
-        if self.nlight_wp and self.nlight:
+        if self.nlight_wp >= 0 and self.nlight:
             return self.nlight_wp, self.nlight.state
 
         return -1, TrafficLight.UNKNOWN

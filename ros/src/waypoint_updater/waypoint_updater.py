@@ -3,6 +3,7 @@
 import rospy
 from std_msgs.msg import Int32
 from geometry_msgs.msg import PoseStamped
+from geometry_msgs.msg import Quaternion
 from styx_msgs.msg import Lane, Waypoint
 
 import math
@@ -39,19 +40,20 @@ class WaypointUpdater(object):
 
         self.final_waypoints_pub = rospy.Publisher('final_waypoints', Lane, queue_size=1)
 
-        # TODO: Add other member variables you need below
-
         self.base_waypoints = None
 
         self.current_pose = None
  
-        self.light_wp = -1
+        self.light_wp = -2
         self.stopping_waypoints = None
+
+        self.state = 0  # 0 - init w/o camera, 1 - init w/ camera, 2 - going, 3 - stopping
 
         self.loop()
 
     def loop(self):
         rate = rospy.Rate(2) # 10 # 40 # Hz
+
         while not rospy.is_shutdown():
             if self.current_pose and self.base_waypoints:
                 next = self.get_next_waypoint()
@@ -59,26 +61,77 @@ class WaypointUpdater(object):
                 lane.header.frame_id = '/world'
                 lane.header.stamp = rospy.Time(0)
 
-                if self.light_wp < 0:
+                if self.light_wp == -2:  # no camera
+                    self.state = 0
+                    lane.waypoints = []
+                    self.final_waypoints_pub.publish(lane)
+
+                elif self.light_wp == -1:  # free to go
+                    self.state = 2
                     lane.waypoints = self.base_waypoints[next : next + LOOKAHEAD_WPS]
                     self.stopping_waypoints = None
                     self.final_waypoints_pub.publish(lane)
 
-                else:
-                    self.stopping_waypoints = []
-                    if next < self.light_wp:
+                else:  # red light
+                    if self.state == 0 or self.state == 1:  # still starting, but with camera
+                        self.state = 1   # slow-start
+                        self.stopping_waypoints = []
+
+                        if next < self.light_wp:
+                            for wp in self.base_waypoints[next : self.light_wp + 1]:
+                                p = Waypoint()
+                                wp_pose = wp.pose.pose
+                                p.pose.pose.position.x = wp_pose.position.x
+                                p.pose.pose.position.y = wp_pose.position.y
+                                p.pose.pose.position.z = wp_pose.position.z
+
+                                q = self.quaternion_from_yaw(0.0)
+                                p.pose.pose.orientation = Quaternion(*q)
+
+                                p.twist.twist.linear.x = 2. # slow start
+                                self.stopping_waypoints.append(p)
+                        else:
+                            self.state = 4
+
+                        lane.waypoints = self.decelerate(self.stopping_waypoints) if len(self.stopping_waypoints) > 0 else []
+                        self.final_waypoints_pub.publish(lane)
+
+                    elif self.state == 4:  # end of slow start
+                        self.state = 4
+                        lane.waypoints = []
+                        self.stopping_waypoints = None
+                        self.final_waypoints_pub.publish(lane)
+
+                    elif next < self.light_wp:  # going or stopping
+                        self.state = 3  # stopping
+                        self.stopping_waypoints = []
+
                         for wp in self.base_waypoints[next : self.light_wp + 1]:
                             p = Waypoint()
                             wp_pose = wp.pose.pose
                             p.pose.pose.position.x = wp_pose.position.x
                             p.pose.pose.position.y = wp_pose.position.y
                             p.pose.pose.position.z = wp_pose.position.z
-                            p.pose.pose.orientation = wp_pose.orientation
+
+                            q = self.quaternion_from_yaw(0.0)
+                            p.pose.pose.orientation = Quaternion(*q)
+
                             p.twist.twist.linear.x = wp.twist.twist.linear.x
                             self.stopping_waypoints.append(p)
 
-                    lane.waypoints = self.decelerate(self.stopping_waypoints) if len(self.stopping_waypoints) > 0 else []
-                    self.final_waypoints_pub.publish(lane)
+                        lane.waypoints = self.decelerate(self.stopping_waypoints) if len(self.stopping_waypoints) > 0 else []
+                        self.final_waypoints_pub.publish(lane)
+
+                    elif self.state == 3:  # stopping already
+                        self.state = 3
+                        lane.waypoints = []
+                        self.final_waypoints_pub.publish(lane)
+
+                    else:  # going past red light: apparently a sudden switch right under
+                        self.state = 2
+                        lane.waypoints = self.base_waypoints[next : next + LOOKAHEAD_WPS]
+                        self.stopping_waypoints = None
+                        self.final_waypoints_pub.publish(lane)
 
             rate.sleep()
 
