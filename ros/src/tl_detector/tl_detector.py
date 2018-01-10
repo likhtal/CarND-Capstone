@@ -13,7 +13,15 @@ import yaml
 import numpy as np
 
 STATE_COUNT_THRESHOLD = 1
-MAX_D_SQ = 100.*100.
+
+NO_CAMERA_YET = -2
+NO_RED = -1
+NO_STOP = -1
+
+LOOK_AHEAD = 100
+LOOK_BEHIND = 10
+
+STOP_DISPLACEMENT = -8
 
 class TLDetector(object):
     def __init__(self):
@@ -51,15 +59,17 @@ class TLDetector(object):
 
         self.state = TrafficLight.UNKNOWN
         self.last_state = TrafficLight.UNKNOWN
-        self.last_wp = -2
+        self.last_wp = NO_CAMERA_YET
         self.state_count = 0
 
         self.stop_waypoints = []
 
         self.car_wp = -1
-        self.nlight_i = -1
-        self.nlight_wp = -1
+        self.nlight_i = NO_STOP
+        self.nlight_wp = NO_CAMERA_YET
         self.nlight = None
+
+        self.last100 = -1
 
         self.initializing = True
         self.loop()
@@ -69,7 +79,7 @@ class TLDetector(object):
         while not rospy.is_shutdown():
 
             if self.initializing:
-                self.upcoming_red_light_pub.publish(Int32(-2))
+                self.upcoming_red_light_pub.publish(Int32(NO_CAMERA_YET))
 
             else:
                 if self.current_pose and self.base_waypoints and len(self.lights) > 0 and len(self.stop_waypoints) > 0:
@@ -79,12 +89,16 @@ class TLDetector(object):
 
                     # we are near this point
                     self.car_wp = self.get_closest_waypoint(self.current_pose.pose)
+                    if self.last100 != self.car_wp // 100:
+                      self.last100 = self.car_wp // 100
+                      print(("Car waypoint:", self.last100*100))
+                   
                     self.nlight_i = self.find_next_stop(self.car_wp)
 
-                    self.nlight_wp = -1
+                    self.nlight_wp = NO_RED
                     self.nlight = None
 
-                    if self.nlight_i >= 0 and (self.car_wp < self.stop_waypoints[self.nlight_i] + 10) and (self.car_wp > self.stop_waypoints[self.nlight_i] - 100):
+                    if self.nlight_i >= 0 and (self.car_wp < self.stop_waypoints[self.nlight_i] + LOOK_BEHIND) and (self.car_wp > self.stop_waypoints[self.nlight_i] - LOOK_AHEAD):
 
                         self.nlight_wp = self.stop_waypoints[self.nlight_i]
                         self.nlight = self.lights[self.nlight_i]
@@ -99,8 +113,8 @@ class TLDetector(object):
                         self.sub_image.unregister()
                         self.sub_image = None
                         print("unsubscribed")
-                        self.last_wp = -1
-                        self.upcoming_red_light_pub.publish(Int32(-1))
+                        self.last_wp = NO_RED
+                        self.upcoming_red_light_pub.publish(Int32(NO_RED))
 
                 else:
                     print("No pose, or no waypoints, or # of lights or stops is zero!!!")
@@ -120,7 +134,7 @@ class TLDetector(object):
         for stop_pos in self.stop_positions:
            stop_pose_stamped = self.create_dummy_pose(stop_pos[0], stop_pos[1], 0)
            stop_wp = self.get_closest_waypoint(stop_pose_stamped.pose)
-           self.stop_waypoints.append(stop_wp - 8)
+           self.stop_waypoints.append(stop_wp + STOP_DISPLACEMENT)
 
     def traffic_cb(self, msg):
         self.lights = msg.lights
@@ -148,7 +162,11 @@ class TLDetector(object):
             self.state = state
         elif self.state_count >= STATE_COUNT_THRESHOLD:
             self.last_state = self.state
-            light_wp = light_wp if state == TrafficLight.RED or state == TrafficLight.YELLOW else -1
+            
+            if self.initializing:
+                light_wp = NO_CAMERA_YET
+            else:
+                light_wp = light_wp if state == TrafficLight.RED or state == TrafficLight.YELLOW else NO_RED
 
             if state == TrafficLight.RED:
               print(("nlight_i:", self.nlight_i, "RED", self.state_count, "car_wp:", self.car_wp, "nlight_wp:", self.nlight_wp))
@@ -177,9 +195,9 @@ class TLDetector(object):
 
     def find_next_stop(self, wp):
         for i in range(len(self.stop_waypoints)):
-           if wp < self.stop_waypoints[i] + 10:
+           if wp < self.stop_waypoints[i] + LOOK_BEHIND:
               return i
-        return -1
+        return NO_STOP
 
     def distance_sq(self, p1, p2):
         x, y, z = p1.x - p2.x, p1.y - p2.y, p1.z - p2.z
@@ -229,12 +247,12 @@ class TLDetector(object):
         """
         if self.initializing:
             state = self.get_light_state(0)
-            return -1, TrafficLight.UNKNOWN
+            return NO_CAMERA_YET, TrafficLight.UNKNOWN
 
         if self.nlight_wp >= 0 and self.nlight:
             return self.nlight_wp, self.nlight.state
 
-        return -1, TrafficLight.UNKNOWN
+        return NO_STOP, TrafficLight.UNKNOWN
 
 if __name__ == '__main__':
     try:
