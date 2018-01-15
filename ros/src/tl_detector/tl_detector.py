@@ -27,6 +27,9 @@ class TLDetector(object):
     def __init__(self):
         rospy.init_node('tl_detector')
 
+        self.use_classifier = rospy.get_param('~use_classifier', False)
+        print(("self.use_classifier:", self.use_classifier))
+
         self.current_pose = None
         self.base_waypoints = None
 
@@ -53,10 +56,6 @@ class TLDetector(object):
 
         self.upcoming_red_light_pub = rospy.Publisher('/traffic_waypoint', Int32, queue_size=1)
 
-        self.bridge = CvBridge()
-        self.light_classifier = TLClassifier()
-        self.listener = tf.TransformListener()
-
         self.state = TrafficLight.UNKNOWN
         self.last_state = TrafficLight.UNKNOWN
         self.last_wp = NO_CAMERA_YET
@@ -72,6 +71,11 @@ class TLDetector(object):
         self.last100 = -1
 
         self.initializing = True
+
+        self.bridge = CvBridge()
+        self.light_classifier = TLClassifier()
+        self.listener = tf.TransformListener()
+
         self.loop()
 
     def loop(self):
@@ -117,7 +121,15 @@ class TLDetector(object):
                         self.upcoming_red_light_pub.publish(Int32(NO_RED))
 
                 else:
-                    print("No pose, or no waypoints, or # of lights or stops is zero!!!")
+                    if not self.current_pose:
+                        print("No pose!!!")
+                    elif not self.base_waypoints:
+                        print("No waypoints!!!")
+                    elif len(self.lights) <= 0:
+                        print("# of lights is zero!!!")
+                    elif len(self.stop_waypoints) <= 0:
+                        print("# of stops is zero!!!")
+
                     break
 
             rate.sleep()
@@ -229,7 +241,7 @@ class TLDetector(object):
         """
         if(not self.has_image):
             self.prev_light_loc = None
-            return False
+            return TrafficLight.UNKNOWN
 
         cv_image = self.bridge.imgmsg_to_cv2(self.camera_image, "bgr8")
 
@@ -246,11 +258,15 @@ class TLDetector(object):
 
         """
         if self.initializing:
-            state = self.get_light_state(0)
             return NO_CAMERA_YET, TrafficLight.UNKNOWN
 
         if self.nlight_wp >= 0 and self.nlight:
-            return self.nlight_wp, self.nlight.state
+            if self.use_classifier:
+                return self.nlight_wp, self.get_light_state(self.nlight_wp)
+            else:
+                return self.nlight_wp, self.nlight.state
+        else:
+            pass
 
         return NO_STOP, TrafficLight.UNKNOWN
 

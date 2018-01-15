@@ -73,6 +73,7 @@ class WaypointUpdater(object):
                 lane = Lane()
                 lane.header.frame_id = '/world'
                 lane.header.stamp = rospy.Time(0)
+                #lane.waypoints = self.just_go(next)
 
                 if self.light_wp == NO_CAMERA_YET:  # no camera
                     self.state = State.NoCameraYet

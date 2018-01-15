@@ -183,6 +183,7 @@ class Bridge(object):
            image_array = np.asarray(image)
            image_message = self.bridge.cv2_to_imgmsg(image_array, encoding="rgb8")
            self.publishers['image'].publish(image_message)
+           #print((rospy.get_time(), "image"))
 
         self.n += 1
         self.n = self.n % EVERY_NTH_IMAGE
