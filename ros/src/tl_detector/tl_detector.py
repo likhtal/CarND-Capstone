@@ -16,6 +16,7 @@ import math
 STATE_COUNT_THRESHOLD = 1
 
 NO_CAMERA_YET = -2
+STILL_INIT = -2
 NO_RED = -1
 NO_STOP = -1
 
@@ -82,10 +83,10 @@ class TLDetector(object):
         rate = rospy.Rate(1)
         while not rospy.is_shutdown():
 
-            if self.initializing:
+            if not self.has_image:
                 self.upcoming_red_light_pub.publish(Int32(NO_CAMERA_YET))
 
-            else:
+            else:                 
                 if self.current_pose and self.base_waypoints and len(self.lights) > 0 and len(self.stop_waypoints) > 0:
                     if len(self.lights) != len(self.stop_waypoints):
                       print("We have different number of stops and lights!!!")
@@ -179,7 +180,7 @@ class TLDetector(object):
             self.last_state = self.state
             
             if self.initializing:
-                light_wp = NO_CAMERA_YET
+                light_wp = STILL_INIT
             else:
                 light_wp = light_wp if state == TrafficLight.RED or state == TrafficLight.YELLOW else NO_RED
 
@@ -242,9 +243,9 @@ class TLDetector(object):
             int: ID of traffic light color (specified in styx_msgs/TrafficLight)
 
         """
-        if(not self.has_image):
-            self.prev_light_loc = None
-            return TrafficLight.UNKNOWN
+        #if(not self.has_image):
+        #    self.prev_light_loc = None
+        #    return TrafficLight.UNKNOWN
 
         cv_image = self.bridge.imgmsg_to_cv2(self.camera_image, "bgr8")
 
@@ -260,21 +261,22 @@ class TLDetector(object):
             int: ID of traffic light color (specified in styx_msgs/TrafficLight)
 
         """
-        if not self.has_image:
-            return NO_CAMERA_YET, TrafficLight.UNKNOWN
-
-        wp, color = NO_STOP, TrafficLight.UNKNOWN
+        wp, color = STILL_INIT, TrafficLight.UNKNOWN
 
         if self.nlight_wp >= 0 and self.nlight:
             if self.use_classifier:
                 wp, color = self.nlight_wp, self.get_light_state(self.nlight_wp)
             else:
                 wp, color = self.nlight_wp, self.nlight.state
-        else:
-            pass
 
-        if self.initializing:
-            self.initializing = False
+            if self.initializing:
+                self.initializing = False
+
+        elif self.initializing:
+            wp, color = STILL_INIT, TrafficLight.UNKNOWN
+
+        else:
+            wp, color = NO_STOP, TrafficLight.UNKNOWN
 
         return wp, color
 
