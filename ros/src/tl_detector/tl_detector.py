@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 import rospy
 from std_msgs.msg import Int32
-from geometry_msgs.msg import PoseStamped, Pose
+from geometry_msgs.msg import PoseStamped, Pose, Quaternion
 from styx_msgs.msg import TrafficLightArray, TrafficLight
 from styx_msgs.msg import Lane
 from sensor_msgs.msg import Image
@@ -11,6 +11,7 @@ import tf
 import cv2
 import yaml
 import numpy as np
+import math
 
 STATE_COUNT_THRESHOLD = 1
 
@@ -20,8 +21,6 @@ NO_STOP = -1
 
 LOOK_AHEAD = 100
 LOOK_BEHIND = 10
-
-STOP_DISPLACEMENT = -8
 
 class TLDetector(object):
     def __init__(self):
@@ -33,6 +32,7 @@ class TLDetector(object):
         self.current_pose = None
         self.base_waypoints = None
 
+        self.has_image = False
         self.camera_image = None
         self.lights = []
 
@@ -144,9 +144,12 @@ class TLDetector(object):
         self.stop_positions = self.config['stop_line_positions']
 
         for stop_pos in self.stop_positions:
-           stop_pose_stamped = self.create_dummy_pose(stop_pos[0], stop_pos[1], 0)
+           stop_pose_stamped = self.create_dummy_pose(stop_pos[0], stop_pos[1], stop_pos[2], stop_pos[3]) if len(stop_pos) == 4 \
+                               else self.create_dummy_pose(stop_pos[0], stop_pos[1])
            stop_wp = self.get_closest_waypoint(stop_pose_stamped.pose)
-           self.stop_waypoints.append(stop_wp + STOP_DISPLACEMENT)
+           self.stop_waypoints.append(stop_wp)
+
+        print(self.stop_waypoints)
 
     def traffic_cb(self, msg):
         self.lights = msg.lights
@@ -186,22 +189,22 @@ class TLDetector(object):
               print(("nlight_i:", self.nlight_i, "YELLOW", self.state_count, "car_wp:", self.car_wp, "nlight_wp:", self.nlight_wp))
 
             self.last_wp = light_wp
-            print(("light_wp", light_wp))
+            print(("light_wp", light_wp, "car_wp:", self.car_wp))
             self.upcoming_red_light_pub.publish(Int32(light_wp))
         else:
             print(("last_wp", self.last_wp))
             self.upcoming_red_light_pub.publish(Int32(self.last_wp))
         self.state_count += 1
 
-        if self.initializing:
-            self.initializing = False
-
-    def create_dummy_pose(self, x, y, z):
+    def create_dummy_pose(self, x, y, z=0., yaw=0.):
         pose = PoseStamped()
 
         pose.pose.position.x = x
         pose.pose.position.y = y
         pose.pose.position.z = z
+
+        q = tf.transformations.quaternion_from_euler(0., 0., math.pi * yaw/180.)
+        pose.pose.orientation = Quaternion(*q)
 
         return pose
 
@@ -257,18 +260,23 @@ class TLDetector(object):
             int: ID of traffic light color (specified in styx_msgs/TrafficLight)
 
         """
-        if self.initializing:
+        if not self.has_image:
             return NO_CAMERA_YET, TrafficLight.UNKNOWN
+
+        wp, color = NO_STOP, TrafficLight.UNKNOWN
 
         if self.nlight_wp >= 0 and self.nlight:
             if self.use_classifier:
-                return self.nlight_wp, self.get_light_state(self.nlight_wp)
+                wp, color = self.nlight_wp, self.get_light_state(self.nlight_wp)
             else:
-                return self.nlight_wp, self.nlight.state
+                wp, color = self.nlight_wp, self.nlight.state
         else:
             pass
 
-        return NO_STOP, TrafficLight.UNKNOWN
+        if self.initializing:
+            self.initializing = False
+
+        return wp, color
 
 if __name__ == '__main__':
     try:

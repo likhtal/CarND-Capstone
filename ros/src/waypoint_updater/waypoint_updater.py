@@ -86,7 +86,9 @@ class WaypointUpdater(object):
                 else:  # red light found
                     if self.state == State.NoCameraYet or self.state == State.SlowStart:  # slow starting, with camera
                         self.state = State.SlowStart   # slow-start
-                        lane.waypoints = self.slow_down(next, self.light_wp)
+                        lane.waypoints = self.slow_down(next, self.light_wp, slow_start=True)
+                        if len(lane.waypoints) <= 0:
+                            self.state = State.EndOfSlowStart
 
                     elif self.state == State.EndOfSlowStart:  # end of slow start
                         self.state = State.EndOfSlowStart
@@ -105,6 +107,7 @@ class WaypointUpdater(object):
                         lane.waypoints = self.just_go(next)
 
                 self.final_waypoints_pub.publish(lane)
+                print(self.state)
 
             rate.sleep()
 
