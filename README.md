@@ -1,8 +1,6 @@
 ## Submitter Info
 
-**THIS IS AM INDIVIDUAL PROJECT - I AM NOT A MEMBER OF ANY TEAM, SO I DON'T EXPECT THIS TO RUN ON CARLA.**
-
-Just in case, my e-mail is: likhtao@gmail.com (Aleksandr Likhterman)
+**THIS IS AN INDIVIDUAL PROJECT - I AM NOT A MEMBER OF ANY TEAM, SO I DON'T EXPECT THIS TO RUN ON CARLA.**
 
 ## Project Description
 
@@ -10,7 +8,7 @@ This project attempts to control a car in Udacity simulator by creating trajecto
 
 ### Installation/Set-up
 
-I was using the following configuration:
+Originaly, I was using the following configuration:
 
 * My machine: Surface Book Pro, Intel Core I7-6600U at 2.60GHz 2.81 GHz, with 16GB of RAM, Nvidia GPU with 1GB of memory, running Windows 10 Pro.
 * For running ROS and nodes I was using VirtualBox with VM from Udacity [here](https://classroom.udacity.com/nanodegrees/nd013/parts/6047fe34-d93c-4f50-8336-b70ef10cb4b2/modules/e1a23b06-329a-4684-a717-ad476f0d8dff/lessons/7e3627d7-14f7-4a33-9dbf-75c98a6e411b/concepts/8c742938-8436-4d3d-9939-31e40284e7a6?contentVersion=1.0.0&contentLocale=en-us).
@@ -46,11 +44,44 @@ EVERY_NTH_IMAGE = 6
 ```
 
 After that the car was able to make it around the loop with the camera on. Until Microsoft aplied their update for Meltdown/Spectre to my machine.
-Eveything stopped working immediately. Apparently, the slowdown caused by the update was enough to break the balance. I had to roll back the update and freeze Microsoft updates till I submit the project.
+Everything stopped working immediately. Apparently, the slowdown caused by the update was enough to break the balance. I had to roll back the update and freeze Microsoft updates till I submit the project.
 
 Additional issue was/is using Faster RCNN model, essentially following the work of Cold Knight [here](https://github.com/coldKnight/TrafficLight_Detection-TensorFlowAPI).
 I set up P2 instance in AWS to train the models and succeeded. Unfortunately, even after all optimizations, running detection in VM takes a few seconds per image.
 (Running detection on my machine using my GPU takes about half a second per image; running detection in P2 takes about 160 msecs - which would be acceptable with image publishing rate at 1-2 images per second.)
+
+In the end I tried [paperspace](paperspace.com) approach with Docker GPU, and that worked really well. ML-In-aBox with Ubuntu 16.04 was a perfect fit - except that, eventually, I had to upgrade to 100GB of HD (from 50 GB).
+50GB was enough for everything, except for movie creation.
+
+### Paperspace/Docker GPU
+
+Instructions for installation (and running) Docker GPU are located [here](github.com/team-inrs/CarND-Capstone). The process generated docker with the team content, hich I overwrote (under ros/) with mine.
+
+On paperspace I have it installed at: ~/capstone/CarND-Capstone  (ros-i/ is team-inrs, ros/ is mine)
+
+I set up AWS CLI in the docker, to get my code from AWS S3.
+
+One caveat: I needed to assign execution permissions to all .py, .sh files (having been copied from Windows, then S3).
+
+Downloaded simulator to: ~/sim/linux_sys_int/sys_int.x86_64
+
+To run:
+
+1. From ~/capstone/CarND-Capstone/, run sudo ./run-cuda.sh
+
+Got into docker, base path is /udacity
+
+2. cd ros
+
+3. catkin_make OR catkin_make clean, catkin_make
+
+4. source devel/setup.bash
+
+5. roslaunch launch/styx.launch
+
+6. run simulator
+
+I was using [recordmydesktop](https://askubuntu.com/questions/339207/how-to-install-recordmydesktop-in-ubuntu) to record videos - e.g. https://www.youtube.com/watch?v=oU7trx-vujs
 
 ### The logic
 
@@ -121,6 +152,24 @@ The logic goes as follows:
                         lane.waypoints = self.just_go(next)
 ```
 
+### Traffic Lights Detection
+
+I was using/reproducing approach from https://github.com/coldKnight/TrafficLight_Detection-TensorFlowAPI
+
+Created a P2 AWS instance, and use Putty with enabled Jupyter support for it.
+
+After installation: go to: prj/tensorflow/models/research
+
+From models/research/: export PYTHONPATH=$PYTHONPATH:`pwd`:`pwd`/slim
+
+To test, run python object_detection/builders/model_builder_test.py
+
+Pre-trained models were updated since, so folders names for the models are different now. Also, there were some minor issues with the Google python code that I had to fix (version difference, I guess).
+
+Cold Knight wrote "Due to some unknown reasons the model MobileNet SSD v1 gets trained but does not save for inference. Ignoring this for now." - it worked for me, though.
+
+I used Faster R-CNN and MobileNet SSD. MobileNetworks much-much faster, and gives really poor quality, so I had to stick with Faster R-CNN (and paperspace, b/c otherwise detection was taking to long.)
+
 ### Other
 
 For twist controller I am using pretty standard PID with pretty standard values (I've seen them used by multiple students), and yaw controller provided by Udacity.
@@ -130,7 +179,7 @@ I am resetting PID controller if dbw_enabled value changes.
 self.controller.enable(self.dbw_enabled)
 ```
 
-TL Detector by default uses information on traffic lights provided by Udacity. Unfortunately, my computer performance is not good enough to use the classifier by default.
+TL Detector by default uses information on traffic lights provided by Udacity. Unfortunately, my laptop performance is not good enough to use the classifier by default.
 
 Yet tl_detector.launch file contains a key that controls use of classifier: use_classifier - see below:
 
@@ -144,7 +193,7 @@ Yet tl_detector.launch file contains a key that controls use of classifier: use_
 </launch>
 ```
 
-If use_classifier has value "True", the app will use Faster RCNN classifier.
+If use_classifier has value "True", the app will use Faster RCNN classifier. Works really well with paperspace.
 
 I've updated sim_traffic_light_config.yaml to have actual coordinates for **stop lines** (not traffic lights!), so the car could properly stop at the stop line, rather than going all the way under the traffic light.
 
