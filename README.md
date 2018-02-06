@@ -154,17 +154,55 @@ The logic goes as follows:
 
 ### Traffic Lights Detection
 
-I was using/reproducing approach from https://github.com/coldKnight/TrafficLight_Detection-TensorFlowAPI
+I was using/reproducing approach from https://github.com/coldKnight/TrafficLight_Detection-TensorFlowAPI. Details of the installation can be taked from there.
 
-Created a P2 AWS instance, and use Putty with enabled Jupyter support for it.
+I created a P2 AWS instance using original udacity image (udacity-carnd-advanced-deep-learning - ami-effbaa94 if I am not mistaken), 
+and use Putty with enabled Jupyter support for it (i.e. with tunnel L8000 and localhost:8888).
 
-After installation: go to: prj/tensorflow/models/research
+Training worked better as is (conda root), and inference worked better with the following conda set up (?):
+
+name: tld-gpu
+channels:
+    - https://conda.anaconda.org/menpo
+    - conda-forge
+dependencies:
+    - python==3.6
+    - numpy
+    - matplotlib
+    - jupyter
+    - pillow
+    - lxml
+    - scikit-learn
+    - scikit-image
+    - scipy
+    - pandas
+    - ffmpeg
+    - imageio
+    - pyqt
+    - pip:
+        - moviepy
+        - tensorflow-gpu
+        - keras
+
+
+Pre-trained models were updated since, so folders names for the models are different now, so files in config/ need to be updated. 
+
+Also, there were some minor issues with the Google python code that I had to fix (version difference, I guess). Had to comment out a few lines.
+
+Also, commands in https://github.com/coldKnight/TrafficLight_Detection-TensorFlowAPI refer to certain checkpoints which may differ for you.
+
+After installation, in order to run, go to: .../models/research
 
 From models/research/: export PYTHONPATH=$PYTHONPATH:`pwd`:`pwd`/slim
 
 To test, run python object_detection/builders/model_builder_test.py
 
-Pre-trained models were updated since, so folders names for the models are different now. Also, there were some minor issues with the Google python code that I had to fix (version difference, I guess).
+Yet another issue:
+
+Running python object_detection/train.py --pipeline_config_path=config/ssd_mobilenet-traffic-udacity_sim.config --train_dir=data/sim_training_data/sim_data_capture after python object_detection/train.py --pipeline_config_path=config/faster_rcnn-traffic-udacity_sim.config --train_dir=data/sim_training_data/sim_data_capture (for example) will fail due to the chekpoint already in data/sim_training_data/sim_data_capture.
+
+Create a new directory and copy the data there from the original one (just jpegs), e.g. use:
+python object_detection/train.py --pipeline_config_path=config/ssd_mobilenet-traffic-udacity_sim.config --train_dir=data/sim_training_data/sim_data_capture_ssd 
 
 Cold Knight wrote "Due to some unknown reasons the model MobileNet SSD v1 gets trained but does not save for inference. Ignoring this for now." - it worked for me, though.
 
