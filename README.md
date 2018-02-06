@@ -161,6 +161,7 @@ and use Putty with enabled Jupyter support for it (i.e. with tunnel L8000 and lo
 
 Training worked better as is (conda root), and inference worked better with the following conda set up (?):
 
+```
 name: tld-gpu
 channels:
     - https://conda.anaconda.org/menpo
@@ -183,7 +184,7 @@ dependencies:
         - moviepy
         - tensorflow-gpu
         - keras
-
+```
 
 Pre-trained models were updated since, so folders names for the models are different now, so files in config/ need to be updated. 
 
