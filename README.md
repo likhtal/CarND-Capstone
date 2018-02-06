@@ -50,7 +50,7 @@ Additional issue was/is using Faster RCNN model, essentially following the work 
 I set up P2 instance in AWS to train the models and succeeded. Unfortunately, even after all optimizations, running detection in VM takes a few seconds per image.
 (Running detection on my machine using my GPU takes about half a second per image; running detection in P2 takes about 160 msecs - which would be acceptable with image publishing rate at 1-2 images per second.)
 
-In the end I tried [paperspace](paperspace.com) approach with Docker GPU, and that worked really well. ML-In-aBox with Ubuntu 16.04 was a perfect fit - except that, eventually, I had to upgrade to 100GB of HD (from 50 GB).
+In the end I tried [paperspace](https://paperspace.com) approach with Docker GPU, and that worked really well. ML-In-aBox with Ubuntu 16.04 was a perfect fit - except that, eventually, I had to upgrade to 100GB of HD (from 50 GB).
 50GB was enough for everything, except for movie creation.
 
 ### Paperspace/Docker GPU
